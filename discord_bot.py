@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 import os
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import random
 from message_filter import MessageFilter
@@ -73,31 +73,23 @@ class DiscordBot(commands.Bot):
         await self._send_startup_message()
     
     async def _send_startup_message(self):
-        """Send a random startup message to the first available channel"""
+        """Send a random startup message to a channel named 'copilot' if it exists"""
         try:
             # Select random startup message
             startup_message = random.choice(self.STARTUP_MESSAGES)
             
-            # Find a suitable channel to send the message
+            # Find a channel named 'copilot'
             target_channel = None
             
-            # First, try to find a system channel
             for guild in self.guilds:
-                if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
-                    target_channel = guild.system_channel
+                for channel in guild.text_channels:
+                    if channel.name.lower() == 'copilot' and channel.permissions_for(guild.me).send_messages:
+                        target_channel = channel
+                        break
+                if target_channel:
                     break
             
-            # If no system channel, find the first text channel we can send to
-            if not target_channel:
-                for guild in self.guilds:
-                    for channel in guild.text_channels:
-                        if channel.permissions_for(guild.me).send_messages:
-                            target_channel = channel
-                            break
-                    if target_channel:
-                        break
-            
-            # Send the startup message
+            # Send the startup message only if copilot channel found
             if target_channel:
                 embed = discord.Embed(
                     title="🤖 Bot Online",
@@ -110,7 +102,7 @@ class DiscordBot(commands.Bot):
                 await target_channel.send(embed=embed)
                 logger.info(f"Sent startup message to {target_channel.name}: {startup_message}")
             else:
-                logger.warning("No suitable channel found to send startup message")
+                logger.info("No 'copilot' channel found, skipping startup message")
                 
         except Exception as e:
             logger.error(f"Error sending startup message: {e}")
@@ -197,6 +189,11 @@ async def help_command(ctx):
     embed.add_field(
         name="!usage",
         value="Show OpenAI token usage statistics and rate limits",
+        inline=False
+    )
+    embed.add_field(
+        name="!model [model_name]",
+        value="View or temporarily change your OpenAI model (lasts 1 hour)",
         inline=False
     )
     embed.add_field(
@@ -395,6 +392,110 @@ async def usage_command(ctx):
         logger.error(f"Error in usage command: {e}")
         await ctx.send(f"❌ Error retrieving usage statistics: {e}")
 
+@commands.command(name='model')
+async def model_command(ctx, model_name: str = None):
+    """Set or view your temporary OpenAI model preference (lasts 1 hour)"""
+    try:
+        openai = ctx.bot.openai_integration
+        
+        if not model_name:
+            # Show current model information
+            user_model_info = openai.get_user_model_info(ctx.author.id)
+            
+            embed = discord.Embed(
+                title="🤖 Your OpenAI Model",
+                color=0x00A67E,
+                timestamp=datetime.now(timezone.utc)
+            )
+            
+            embed.add_field(
+                name="Current Model",
+                value=f"`{user_model_info['model']}`",
+                inline=True
+            )
+            
+            if user_model_info.get('is_temporary', False):
+                time_remaining = user_model_info.get('time_remaining', timedelta(0))
+                hours_remaining = time_remaining.total_seconds() / 3600
+                embed.add_field(
+                    name="⏰ Time Remaining",
+                    value=f"{hours_remaining:.1f} hours",
+                    inline=True
+                )
+                embed.add_field(
+                    name="Status",
+                    value="🕒 Temporary (expires automatically)",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name="Status",
+                    value="🔧 Default (permanent)",
+                    inline=True
+                )
+            
+            embed.add_field(
+                name="Available Models",
+                value=(
+                    "`gpt-4o` - Latest GPT-4 with vision\n"
+                    "`gpt-4o-mini` - Fast, affordable GPT-4\n"
+                    "`gpt-4` - Standard GPT-4\n"
+                    "`gpt-4-32k` - GPT-4 with extended context\n"
+                    "`gpt-5` - Next-generation GPT-5\n"
+                    "`gpt-5-mini` - Compact GPT-5\n"
+                    "`gpt-5-nano` - Lightweight GPT-5\n"
+                    "`o4-mini-deep-research` - Specialized research model"
+                ),
+                inline=False
+            )
+            
+            embed.set_footer(text=f"Use !model <model_name> to change temporarily")
+            
+        else:
+            # Validate model name
+            valid_models = [
+                'gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-4-32k',
+                'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'o4-mini-deep-research'
+            ]
+            
+            if model_name.lower() not in valid_models:
+                await ctx.send(
+                    f"❌ Invalid model name: `{model_name}`\n"
+                    f"Available models: {', '.join(f'`{m}`' for m in valid_models)}\n"
+                    f"Use `!model` to see your current model."
+                )
+                return
+            
+            # Set temporary model
+            openai.set_user_model(ctx.author.id, model_name.lower(), duration_hours=1)
+            
+            embed = discord.Embed(
+                title="✅ Model Changed Temporarily",
+                description=f"Your OpenAI model has been set to `{model_name.lower()}` for the next hour.",
+                color=0x00ff00,
+                timestamp=datetime.now(timezone.utc)
+            )
+            
+            embed.add_field(
+                name="Duration",
+                value="1 hour (then reverts to default)",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="To Check Status",
+                value="Use `!model` with no arguments",
+                inline=True
+            )
+            
+            embed.set_footer(text=f"Changed by {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        logger.error(f"Error in model command: {e}")
+        await ctx.send(f"❌ Error managing model preference: {e}")
+
 def main():
     """Main function to run the bot"""
     # Get Discord token from environment
@@ -414,6 +515,7 @@ def main():
     bot.add_command(test_openai_command)
     bot.add_command(openai_status_command)
     bot.add_command(usage_command)
+    bot.add_command(model_command)
     
     try:
         bot.run(token)

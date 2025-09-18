@@ -9,7 +9,7 @@ import logging
 import os
 import json
 from typing import Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import time
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class OpenAIIntegration:
     
     def __init__(self, message_filter=None):
         self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-4')
+        self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-5-nano')
         self.openai_endpoint = os.getenv('OPENAI_ENDPOINT', 'https://api.openai.com/v1/chat/completions')
         self.max_tokens = int(os.getenv('OPENAI_MAX_TOKENS', '500'))
         self.temperature = float(os.getenv('OPENAI_TEMPERATURE', '0.7'))
@@ -36,10 +36,59 @@ class OpenAIIntegration:
         self.api_calls_made = 0
         self.session_start = datetime.utcnow()
         
+        # Temporary user model preferences (user_id -> {'model': str, 'expires_at': datetime})
+        self.user_models = {}
+        
         if not self.enabled:
             logger.info("OpenAI integration disabled via OPENAI_INTEGRATION_ENABLED=false")
         elif not self.openai_api_key or self.openai_api_key == "your-openai-api-key-here":
             logger.error("OpenAI API key not configured - integration will not work")
+    
+    def set_user_model(self, user_id: int, model: str, duration_hours: int = 1):
+        """Set a temporary model preference for a user"""
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
+        self.user_models[user_id] = {
+            'model': model,
+            'expires_at': expires_at
+        }
+        logger.info(f"Set temporary model '{model}' for user {user_id}, expires at {expires_at}")
+    
+    def get_user_model(self, user_id: int) -> str:
+        """Get the current model for a user (temporary or default)"""
+        # Clean up expired models first
+        self._cleanup_expired_models()
+        
+        if user_id in self.user_models:
+            return self.user_models[user_id]['model']
+        return self.openai_model
+    
+    def _cleanup_expired_models(self):
+        """Remove expired temporary model preferences"""
+        now = datetime.now(timezone.utc)
+        expired_users = [
+            user_id for user_id, data in self.user_models.items()
+            if data['expires_at'] <= now
+        ]
+        for user_id in expired_users:
+            logger.info(f"Removing expired temporary model for user {user_id}")
+            del self.user_models[user_id]
+    
+    def get_user_model_info(self, user_id: int) -> Dict[str, Any]:
+        """Get information about a user's current model preference"""
+        self._cleanup_expired_models()
+        
+        if user_id in self.user_models:
+            data = self.user_models[user_id]
+            return {
+                'model': data['model'],
+                'expires_at': data['expires_at'],
+                'is_temporary': True,
+                'time_remaining': data['expires_at'] - datetime.now(timezone.utc)
+            }
+        return {
+            'model': self.openai_model,
+            'is_temporary': False
+        }
     
     async def _get_session(self):
         """Get or create aiohttp session"""
@@ -79,7 +128,7 @@ class OpenAIIntegration:
             
             # Send to OpenAI ChatGPT API
             logger.info("🚀 Sending to OpenAI ChatGPT...")
-            response = await self._send_to_openai(chat_messages)
+            response = await self._send_to_openai(chat_messages, message.author.id)
             
             # Process ChatGPT response if available
             if response:
@@ -121,7 +170,7 @@ class OpenAIIntegration:
             logger.error(f"Error preparing chat messages: {e}")
             return []
     
-    async def _send_to_openai(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    async def _send_to_openai(self, messages: List[Dict[str, str]], user_id: int = None) -> Dict[str, Any]:
         """Send messages to OpenAI ChatGPT API"""
         try:
             if not messages:
@@ -130,17 +179,34 @@ class OpenAIIntegration:
             
             session = await self._get_session()
             
+            # Get the appropriate model for this user
+            model_to_use = self.get_user_model(user_id) if user_id else self.openai_model
+            
             headers = {
                 'Authorization': f'Bearer {self.openai_api_key}',
                 'Content-Type': 'application/json'
             }
             
+            # Base payload
             payload = {
-                'model': self.openai_model,
-                'messages': messages,
-                'max_tokens': self.max_tokens,
-                'temperature': self.temperature
+                'model': model_to_use,
+                'messages': messages
             }
+            
+            # Add temperature only for models that support it
+            # gpt-5-nano and some other models only support default temperature (1.0)
+            models_with_fixed_temperature = ['gpt-5-nano', 'gpt-o1', 'o1-preview', 'o1-mini']
+            
+            if not any(model_name in model_to_use.lower() for model_name in models_with_fixed_temperature):
+                payload['temperature'] = self.temperature
+            else:
+                logger.debug(f"Model {model_to_use} uses fixed temperature, skipping temperature parameter")
+            
+            # Add the appropriate token limit parameter based on model
+            if model_to_use.startswith('gpt-5') or model_to_use.startswith('o'):
+                payload['max_completion_tokens'] = self.max_tokens
+            else:
+                payload['max_tokens'] = self.max_tokens
             
             logger.debug(f"Sending to OpenAI: {json.dumps(payload, indent=2)}")
             

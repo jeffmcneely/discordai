@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# deploy-config.sh - Helper script to configure secrets for Discord Bot deployment
-# This script helps you set up the necessary Kubernetes secrets for your Discord bot
+# deploy-config.sh - Helper script to configure custom-values.yaml for Discord Bot deployment
+# This script helps you set up the necessary configuration file for your Discord bot
 
 set -e
 
@@ -28,32 +28,145 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to create Kubernetes secret
-create_secret() {
-    local secret_name="discordai"
-    local namespace="${1:-default}"
+# Function to create/update custom-values.yaml file
+create_custom_values() {
+    local namespace="${1:-discord}"
+    local values_file="custom-values.yaml"
 
-    log_info "Creating Kubernetes secret: ${secret_name} in namespace: ${namespace}"
+    log_info "Creating/updating custom values file: ${values_file}"
 
-    # Check if secret already exists
-    if kubectl get secret "${secret_name}" --namespace "${namespace}" &> /dev/null; then
-        log_warning "Secret ${secret_name} already exists. Updating..."
-        kubectl delete secret "${secret_name}" --namespace "${namespace}"
+    # Check if custom-values.yaml exists
+    if [[ -f "${values_file}" ]]; then
+        log_warning "Custom values file already exists. Creating backup..."
+        cp "${values_file}" "${values_file}.backup.$(date +%Y%m%d-%H%M%S)"
+        log_info "Backup created: ${values_file}.backup.$(date +%Y%m%d-%H%M%S)"
+    else
+        # Copy template from helm values
+        if [[ -f "helm/discord-bot/values.yaml" ]]; then
+            log_info "Creating custom-values.yaml from template..."
+            cp "helm/discord-bot/values.yaml" "${values_file}"
+        else
+            log_error "Template values.yaml not found at helm/discord-bot/values.yaml"
+            exit 1
+        fi
     fi
 
-    # Create the secret
-    kubectl create secret generic "${secret_name}" \
-        --namespace "${namespace}" \
-        --from-literal=DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN}" \
-        --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
-        --from-literal=OPENAI_MODEL="${OPENAI_MODEL:-gpt-3.5-turbo}" \
-        --from-literal=OPENAI_MAX_TOKENS="${OPENAI_MAX_TOKENS:-1000}" \
-        --from-literal=OPENAI_TEMPERATURE="${OPENAI_TEMPERATURE:-0.7}" \
-        --from-literal=OPENAI_INTEGRATION_ENABLED="${OPENAI_INTEGRATION_ENABLED:-true}" \
-        --from-literal=RATE_LIMIT_MESSAGES_PER_MINUTE="${RATE_LIMIT_MESSAGES_PER_MINUTE:-5}" \
-        --from-literal=RATE_LIMIT_TOKENS_PER_HOUR="${RATE_LIMIT_TOKENS_PER_HOUR:-10000}" \
+    # Update the values file with environment variables
+    log_info "Updating configuration values..."
 
-    log_success "Secret created successfully"
+    # Create a temporary file with the updated values
+    cat > "${values_file}" << EOF
+# Custom values for discord-bot deployment
+# This file contains environment-specific configuration and secrets
+# DO NOT COMMIT this file to Git - it contains sensitive information
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/jeffmcneely/discordai
+  pullPolicy: Always
+  tag: latest
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: discord-bot.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Discord Bot Configuration
+discordBot:
+  logLevel: INFO
+  maxMessagesPerMinute: 10
+
+# Redis Configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# PostgreSQL Configuration (Remote Database)
+postgresql:
+  enabled: false
+
+# Monitoring and Observability
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+# Environment Variables - These will be injected into the pod
+env:
+  DISCORD_BOT_TOKEN: "${DISCORD_BOT_TOKEN}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  OPENAI_MODEL: "${OPENAI_MODEL:-gpt-5-nano}"
+  OPENAI_MAX_TOKENS: "${OPENAI_MAX_TOKENS:-1000}"
+  OPENAI_TEMPERATURE: "${OPENAI_TEMPERATURE:-0.7}"
+  OPENAI_INTEGRATION_ENABLED: "${OPENAI_INTEGRATION_ENABLED:-true}"
+  RATE_LIMIT_MESSAGES_PER_MINUTE: "${RATE_LIMIT_MESSAGES_PER_MINUTE:-5}"
+  RATE_LIMIT_TOKENS_PER_HOUR: "${RATE_LIMIT_TOKENS_PER_HOUR:-10000}"
+  DISCORD_DB_URL: "${DISCORD_DB_URL:-}"
+EOF
+
+    log_success "Custom values file created/updated successfully"
 }
 
 # Function to validate environment variables
@@ -84,28 +197,34 @@ validate_env() {
 
 # Function to show current configuration
 show_config() {
+    local namespace="${1:-discord}"
     echo ""
     echo "=== Current Configuration ==="
+    echo "Namespace: ${namespace}"
     echo "Discord Bot Token: ${DISCORD_BOT_TOKEN:+****$(echo $DISCORD_BOT_TOKEN | tail -c 10)}"
     echo "OpenAI API Key: ${OPENAI_API_KEY:+****$(echo $OPENAI_API_KEY | tail -c 10)}"
-    echo "OpenAI Model: ${OPENAI_MODEL:-gpt-3.5-turbo}"
+    echo "OpenAI Model: ${OPENAI_MODEL:-gpt-5-nano}"
     echo "Max Tokens: ${OPENAI_MAX_TOKENS:-1000}"
     echo "Temperature: ${OPENAI_TEMPERATURE:-0.7}"
     echo "Integration Enabled: ${OPENAI_INTEGRATION_ENABLED:-true}"
     echo "Rate Limit (messages/min): ${RATE_LIMIT_MESSAGES_PER_MINUTE:-5}"
     echo "Rate Limit (tokens/hour): ${RATE_LIMIT_TOKENS_PER_HOUR:-10000}"
+    echo "Database URL: ${DISCORD_DB_URL:+****configured}"
+    echo ""
+    echo "Output file: custom-values.yaml"
     echo ""
 }
 
 # Function to show help
 show_help() {
-    echo "Discord Bot Deployment Configuration Helper"
+    echo "Discord Bot Configuration Helper"
     echo ""
-    echo "This script helps you create the necessary Kubernetes secrets for your Discord bot."
+    echo "This script helps you create the custom-values.yaml file for your Discord bot deployment."
+    echo "It uses environment variables to configure the application (no Kubernetes secrets)."
     echo ""
     echo "Usage:"
-    echo "  ./deploy-config.sh                    # Create secret with current environment variables"
-    echo "  ./deploy-config.sh --namespace prod   # Create secret in specific namespace"
+    echo "  ./deploy-config.sh                    # Create custom-values.yaml with current environment variables"
+    echo "  ./deploy-config.sh --namespace prod   # Specify target namespace (informational only)"
     echo "  ./deploy-config.sh --help            # Show this help"
     echo ""
     echo "Required Environment Variables:"
@@ -113,22 +232,28 @@ show_help() {
     echo "  OPENAI_API_KEY        Your OpenAI API key"
     echo ""
     echo "Optional Environment Variables:"
-    echo "  OPENAI_MODEL                     Default: gpt-3.5-turbo"
+    echo "  OPENAI_MODEL                     Default: gpt-5-nano"
     echo "  OPENAI_MAX_TOKENS               Default: 1000"
     echo "  OPENAI_TEMPERATURE              Default: 0.7"
     echo "  OPENAI_INTEGRATION_ENABLED      Default: true"
     echo "  RATE_LIMIT_MESSAGES_PER_MINUTE  Default: 5"
     echo "  RATE_LIMIT_TOKENS_PER_HOUR      Default: 10000"
+    echo "  DISCORD_DB_URL                  PostgreSQL connection string (optional)"
     echo ""
     echo "Example:"
     echo "  export DISCORD_BOT_TOKEN='your_token_here'"
     echo "  export OPENAI_API_KEY='your_key_here'"
     echo "  ./deploy-config.sh"
+    echo ""
+    echo "Output:"
+    echo "  Creates/updates custom-values.yaml with your configuration"
+    echo "  This file is used by upstart.sh for deployment"
+    echo "  The file is automatically added to .gitignore"
 }
 
 # Main function
 main() {
-    local namespace="default"
+    local namespace="discord"
 
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
@@ -149,30 +274,31 @@ main() {
         esac
     done
 
-    echo "🔧 Discord Bot Deployment Configuration"
-    echo "========================================"
+    echo "🔧 Discord Bot Configuration Helper"
+    echo "===================================="
 
     # Validate environment
     validate_env
 
     # Show current configuration
-    show_config
+    show_config "${namespace}"
 
     # Confirm with user
-    read -p "Do you want to create the Kubernetes secret with these settings? (y/N): " -n 1 -r
+    read -p "Do you want to create/update custom-values.yaml with these settings? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         log_info "Operation cancelled"
         exit 0
     fi
 
-    # Create the secret
-    create_secret "${namespace}"
+    # Create the custom values file
+    create_custom_values "${namespace}"
 
     echo ""
     log_success "Configuration complete!"
-    log_info "You can now run './upstart.sh' to build and deploy your bot"
-    log_info "Or manually deploy with: helm install discord-bot ./helm/discord-bot --namespace ${namespace}"
+    log_info "Created: custom-values.yaml"
+    log_info "You can now run './upstart.sh' to deploy your bot"
+    log_warning "Remember: custom-values.yaml contains secrets and is excluded from Git"
 }
 
 # Run main function

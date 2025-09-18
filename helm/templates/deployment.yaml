@@ -33,10 +33,52 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          envFrom:
-            - secretRef:
-                name: discordai
           env:
+            # Discord Bot Configuration
+            {{- if .Values.env.DISCORD_BOT_TOKEN }}
+            - name: DISCORD_BOT_TOKEN
+              value: {{ .Values.env.DISCORD_BOT_TOKEN | quote }}
+            {{- end }}
+            
+            # OpenAI Configuration
+            {{- if .Values.env.OPENAI_API_KEY }}
+            - name: OPENAI_API_KEY
+              value: {{ .Values.env.OPENAI_API_KEY | quote }}
+            {{- end }}
+            {{- if .Values.env.OPENAI_MODEL }}
+            - name: OPENAI_MODEL
+              value: {{ .Values.env.OPENAI_MODEL | quote }}
+            {{- end }}
+            {{- if .Values.env.OPENAI_MAX_TOKENS }}
+            - name: OPENAI_MAX_TOKENS
+              value: {{ .Values.env.OPENAI_MAX_TOKENS | quote }}
+            {{- end }}
+            {{- if .Values.env.OPENAI_TEMPERATURE }}
+            - name: OPENAI_TEMPERATURE
+              value: {{ .Values.env.OPENAI_TEMPERATURE | quote }}
+            {{- end }}
+            {{- if .Values.env.OPENAI_INTEGRATION_ENABLED }}
+            - name: OPENAI_INTEGRATION_ENABLED
+              value: {{ .Values.env.OPENAI_INTEGRATION_ENABLED | quote }}
+            {{- end }}
+            
+            # Rate Limiting Configuration
+            {{- if .Values.env.RATE_LIMIT_MESSAGES_PER_MINUTE }}
+            - name: RATE_LIMIT_MESSAGES_PER_MINUTE
+              value: {{ .Values.env.RATE_LIMIT_MESSAGES_PER_MINUTE | quote }}
+            {{- end }}
+            {{- if .Values.env.RATE_LIMIT_TOKENS_PER_HOUR }}
+            - name: RATE_LIMIT_TOKENS_PER_HOUR
+              value: {{ .Values.env.RATE_LIMIT_TOKENS_PER_HOUR | quote }}
+            {{- end }}
+            
+            # Database Configuration
+            {{- if .Values.env.DISCORD_DB_URL }}
+            - name: DISCORD_DB_URL
+              value: {{ .Values.env.DISCORD_DB_URL | quote }}
+            {{- end }}
+            
+            # Application Configuration
             - name: LOG_LEVEL
               value: {{ .Values.discordBot.logLevel | quote }}
             - name: MAX_MESSAGES_PER_MINUTE
@@ -44,10 +86,6 @@ spec:
             {{- if .Values.redis.enabled }}
             - name: REDIS_URL
               value: "redis://{{ include "discord-bot.fullname" . }}-redis-master:6379"
-            {{- end }}
-            {{- if .Values.discordBot.databaseUrl }}
-            - name: DISCORD_DB_URL
-              value: {{ .Values.discordBot.databaseUrl | quote }}
             {{- end }}
           ports:
             - name: http
