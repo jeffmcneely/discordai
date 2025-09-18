@@ -150,6 +150,7 @@ logs/
 helm/discord-bot/charts/
 helm/discord-bot/Chart.lock
 custom-values.yaml
+custom-values.yaml.backup.*
 
 # Docker
 .dockerignore
