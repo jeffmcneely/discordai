@@ -2,11 +2,13 @@
 replicaCount: 1
 
 image:
-  repository: discord-openai-bot
-  pullPolicy: IfNotPresent
-  tag: "latest"
+  repository: ghcr.io/jeffmcneely/discordai
+  pullPolicy: Always
+  tag: latest
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-secret
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -68,6 +70,7 @@ discordBot:
   token: ""  # Set via secret
   logLevel: INFO
   maxMessagesPerMinute: 10
+  databaseUrl: ""  # PostgreSQL connection string (optional, set to enable database features)
 
 # OpenAI Integration
 openai:
@@ -92,18 +95,14 @@ redis:
       enabled: true
       size: 1Gi
 
-# PostgreSQL Configuration
+# PostgreSQL Configuration (Remote Database)
 postgresql:
-  enabled: false
-  auth:
-    postgresPassword: "botpassword"
-    username: "botuser"
-    password: "botpassword"
-    database: "discordbot"
-  primary:
-    persistence:
-      enabled: true
-      size: 2Gi
+  enabled: false  # Always false - use remote database
+  host: ""        # Not used - configured via DISCORD_DB_URL
+  port: "5432"    # Not used - configured via DISCORD_DB_URL
+  database: ""    # Not used - configured via DISCORD_DB_URL
+  username: ""    # Not used - configured via DISCORD_DB_URL
+  password: ""    # Not used - configured via DISCORD_DB_URL
 
 # Monitoring and Observability
 monitoring:
@@ -117,7 +116,7 @@ monitoring:
 # The secret should contain these keys as environment variable names:
 # - DISCORD_BOT_TOKEN
 # - OPENAI_API_KEY
-# - OPENAI_MODEL  
+# - OPENAI_MODEL
 # - OPENAI_MAX_TOKENS
 # - OPENAI_TEMPERATURE
 # - OPENAI_INTEGRATION_ENABLED

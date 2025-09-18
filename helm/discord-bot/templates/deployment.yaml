@@ -45,6 +45,10 @@ spec:
             - name: REDIS_URL
               value: "redis://{{ include "discord-bot.fullname" . }}-redis-master:6379"
             {{- end }}
+            {{- if .Values.discordBot.databaseUrl }}
+            - name: DISCORD_DB_URL
+              value: {{ .Values.discordBot.databaseUrl | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080

@@ -7,8 +7,9 @@ import discord
 from discord.ext import commands
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
+import random
 from message_filter import MessageFilter
 from openai_integration import OpenAIIntegration
 
@@ -24,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 class DiscordBot(commands.Bot):
     """Discord Bot with message filtering and OpenAI integration"""
+    
+    # Startup messages
+    STARTUP_MESSAGES = [
+        "I am alive",
+        "I am risen",
+        "I have returned",
+        "Death is a doorway, time is but a window, I am back",
+        "I have arrived"
+    ]
     
     def __init__(self):
         intents = discord.Intents.default()
@@ -44,6 +54,13 @@ class DiscordBot(commands.Bot):
         logger.info(f'{self.user} has connected to Discord!')
         logger.info(f'Bot is in {len(self.guilds)} guilds')
         
+        # Load eBay commands cog
+        try:
+            await self.load_extension('commands.ebay')
+            logger.info('eBay commands loaded successfully')
+        except Exception as e:
+            logger.error(f'Failed to load eBay commands: {e}')
+        
         # Set bot status
         await self.change_presence(
             activity=discord.Activity(
@@ -51,6 +68,52 @@ class DiscordBot(commands.Bot):
                 name="for messages | !help"
             )
         )
+        
+        # Send random startup message
+        await self._send_startup_message()
+    
+    async def _send_startup_message(self):
+        """Send a random startup message to the first available channel"""
+        try:
+            # Select random startup message
+            startup_message = random.choice(self.STARTUP_MESSAGES)
+            
+            # Find a suitable channel to send the message
+            target_channel = None
+            
+            # First, try to find a system channel
+            for guild in self.guilds:
+                if guild.system_channel and guild.system_channel.permissions_for(guild.me).send_messages:
+                    target_channel = guild.system_channel
+                    break
+            
+            # If no system channel, find the first text channel we can send to
+            if not target_channel:
+                for guild in self.guilds:
+                    for channel in guild.text_channels:
+                        if channel.permissions_for(guild.me).send_messages:
+                            target_channel = channel
+                            break
+                    if target_channel:
+                        break
+            
+            # Send the startup message
+            if target_channel:
+                embed = discord.Embed(
+                    title="🤖 Bot Online",
+                    description=f"*{startup_message}*",
+                    color=0x00ff00,
+                    timestamp=datetime.now(timezone.utc)
+                )
+                embed.set_footer(text=f"Connected to {len(self.guilds)} server{'s' if len(self.guilds) != 1 else ''}")
+                
+                await target_channel.send(embed=embed)
+                logger.info(f"Sent startup message to {target_channel.name}: {startup_message}")
+            else:
+                logger.warning("No suitable channel found to send startup message")
+                
+        except Exception as e:
+            logger.error(f"Error sending startup message: {e}")
     
     async def on_message(self, message):
         """Handle incoming messages"""
@@ -134,6 +197,11 @@ async def help_command(ctx):
     embed.add_field(
         name="!usage",
         value="Show OpenAI token usage statistics and rate limits",
+        inline=False
+    )
+    embed.add_field(
+        name="!ebay",
+        value="eBay commands - list auctions, check status, and more",
         inline=False
     )
     await ctx.send(embed=embed)
@@ -263,7 +331,7 @@ async def usage_command(ctx):
         embed = discord.Embed(
             title="📊 OpenAI Usage Statistics",
             color=0x00A67E,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
         
         # Overall session statistics
