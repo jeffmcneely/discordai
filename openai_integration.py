@@ -126,14 +126,16 @@ class OpenAIIntegration:
             chat_messages = await self._prepare_chat_messages(message, filter_result)
             logger.debug(f"📝 Prepared {len(chat_messages)} chat messages")
             
-            # Send to OpenAI ChatGPT API
+            # Send to OpenAI ChatGPT API with latency measurement
             logger.info("🚀 Sending to OpenAI ChatGPT...")
+            start_time = time.perf_counter()
             response = await self._send_to_openai(chat_messages, message.author.id)
+            latency = (time.perf_counter() - start_time) * 1000  # ms
             
             # Process ChatGPT response if available
             if response:
-                logger.info("📨 Received response from ChatGPT, processing...")
-                await self._handle_openai_response(message, response)
+                logger.info(f"📨 Received response from ChatGPT, processing... (latency: {latency:.0f} ms)")
+                await self._handle_openai_response(message, response, latency=latency)
             else:
                 logger.warning("⚠️ No response received from OpenAI")
             
@@ -228,13 +230,14 @@ class OpenAIIntegration:
             logger.error(f"Error sending to OpenAI: {e}")
             return None
     
-    async def _handle_openai_response(self, original_message: discord.Message, openai_response: Dict[str, Any]):
+    async def _handle_openai_response(self, original_message: discord.Message, openai_response: Dict[str, Any], latency: float = None):
         """
         Handle response from OpenAI ChatGPT and relay back to Discord
         
         Args:
             original_message: Original Discord message
             openai_response: Response from OpenAI API
+            latency: Latency in milliseconds (optional)
         """
         try:
             logger.info(f"🤖 OPENAI RESPONSE HANDLER: Processing response for '{original_message.content[:50]}{'...' if len(original_message.content) > 50 else ''}'")
@@ -287,24 +290,21 @@ class OpenAIIntegration:
                 color=0x00A67E,  # OpenAI green
                 timestamp=local_time
             )
-            
             embed.add_field(
                 name="💬 Responding to", 
                 value=f"{original_message.author.mention}: {original_message.content[:100]}{'...' if len(original_message.content) > 100 else ''}", 
                 inline=False
             )
-            
             embed.add_field(name="🧠 Model", value=self.openai_model, inline=True)
             embed.add_field(name="🎛️ Temperature", value=f"{self.temperature}", inline=True)
             embed.add_field(name="📊 Tokens", value=f"{usage.get('total_tokens', 'N/A')}", inline=True)
-            
+            if latency is not None:
+                embed.add_field(name="⏱️ Latency", value=f"{latency:.0f} ms", inline=True)
             embed.set_footer(
                 text=f"Powered by OpenAI • Requested by {original_message.author.display_name}",
                 icon_url=original_message.author.avatar.url if original_message.author.avatar else None
             )
-            
             logger.info("📝 Created Discord embed with ChatGPT response")
-            
             # Send response to Discord
             sent_message = await original_message.channel.send(embed=embed)
             logger.info(f"✅ RESPONSE SENT: Message ID {sent_message.id} sent to #{original_message.channel.name}")
