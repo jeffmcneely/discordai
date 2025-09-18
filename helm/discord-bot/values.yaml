@@ -1,0 +1,134 @@
+# Default values for discord-bot
+replicaCount: 1
+
+image:
+  repository: discord-openai-bot
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: discord-bot.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Discord Bot Configuration
+discordBot:
+  token: ""  # Set via secret
+  logLevel: INFO
+  maxMessagesPerMinute: 10
+
+# OpenAI Integration
+openai:
+  apiKey: ""               # Set via secret
+  model: "gpt-3.5-turbo"   # Set via secret
+  maxTokens: "1000"        # Set via secret
+  temperature: "0.7"       # Set via secret
+  enabled: "true"          # Set via secret
+
+# Rate Limiting Configuration
+rateLimiting:
+  messagesPerMinute: "5"    # Set via secret
+  tokensPerHour: "10000"    # Set via secret
+
+# Redis Configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# PostgreSQL Configuration
+postgresql:
+  enabled: false
+  auth:
+    postgresPassword: "botpassword"
+    username: "botuser"
+    password: "botpassword"
+    database: "discordbot"
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+
+# Monitoring and Observability
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+# Secrets (loaded as environment variables from 'discordai' secret)
+# The secret should contain these keys as environment variable names:
+# - DISCORD_BOT_TOKEN
+# - OPENAI_API_KEY
+# - OPENAI_MODEL  
+# - OPENAI_MAX_TOKENS
+# - OPENAI_TEMPERATURE
+# - OPENAI_INTEGRATION_ENABLED
+# - RATE_LIMIT_MESSAGES_PER_MINUTE
+# - RATE_LIMIT_TOKENS_PER_HOUR
+secrets:
+  discordToken: ""                    # Maps to DISCORD_BOT_TOKEN
+  openaiApiKey: ""                    # Maps to OPENAI_API_KEY
+  openaiModel: "gpt-3.5-turbo"        # Maps to OPENAI_MODEL
+  openaiMaxTokens: "1000"             # Maps to OPENAI_MAX_TOKENS
+  openaiTemperature: "0.7"            # Maps to OPENAI_TEMPERATURE
+  openaiEnabled: "true"               # Maps to OPENAI_INTEGRATION_ENABLED
+  rateLimitMessagesPerMinute: "5"     # Maps to RATE_LIMIT_MESSAGES_PER_MINUTE
+  rateLimitTokensPerHour: "10000"     # Maps to RATE_LIMIT_TOKENS_PER_HOUR
