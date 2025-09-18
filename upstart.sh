@@ -120,9 +120,9 @@ get_version_tag() {
 
 # Function to check if we're in the right directory
 check_project_directory() {
-    if [[ ! -f "Dockerfile" ]] || [[ ! -f "requirements.txt" ]] || [[ ! -d "helm/discord-bot" ]]; then
+    if [[ ! -f "Dockerfile" ]] || [[ ! -f "requirements.txt" ]]; then
         log_error "This script must be run from the root of the discordai project directory"
-        log_error "Required files/directories not found: Dockerfile, requirements.txt, helm/discord-bot/"
+        log_error "Required files/directories not found: Dockerfile, requirements.txt"
         exit 1
     fi
 }
@@ -433,7 +433,7 @@ deploy_helm() {
         log_error "custom-values.yaml not found!"
         log_error "Please create custom-values.yaml with your environment configuration."
         log_error "You can copy values.yaml as a starting template:"
-        log_error "  cp helm/discord-bot/values.yaml custom-values.yaml"
+        log_error "  cp helm/values.yaml custom-values.yaml"
         log_error "Then edit custom-values.yaml with your secrets and configuration."
         exit 1
     fi
