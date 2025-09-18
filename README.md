@@ -134,7 +134,26 @@ The `db.sql` file creates all necessary tables for:
 - Audit logging
 - User preferences and guild configuration
 
-### 4. Automated Deployment (Recommended)
+### 4. Configuration Setup
+
+Before deployment, you need to configure your Discord bot with your secrets and settings:
+
+```bash
+# Set your environment variables
+export DISCORD_BOT_TOKEN="your_discord_token"
+export OPENAI_API_KEY="your_openai_key"
+export OPENAI_MODEL="gpt-5-nano"          # Optional: defaults shown
+export OPENAI_MAX_TOKENS="1000"           # Optional
+export OPENAI_TEMPERATURE="0.7"           # Optional
+
+# Create custom configuration file (this replaces Kubernetes secrets)
+./deploy-config.sh
+
+# The script creates custom-values.yaml with your environment variables
+# This file is automatically excluded from Git for security
+```
+
+### 5. Automated Deployment (Recommended)
 
 Use the `upstart.sh` script for automated build, push, and deployment:
 
@@ -150,70 +169,35 @@ GITHUB_TOKEN=your_github_token ./upstart.sh
 ```
 
 The script will:
-1. Build the Docker image with version tag
-2. Push to GitHub Container Registry (ghcr.io)
-3. Deploy/update using Helm on Kubernetes
-4. Show deployment status
-5. Clean up old images
+1. Check for custom-values.yaml configuration file
+2. Build the Docker image (only if source code changed)
+3. Push to GitHub Container Registry (ghcr.io)
+4. Deploy/update using Helm with your custom configuration
+5. Show deployment status
+6. Clean up build resources
 
-#### First-Time Setup
-
-Before running `upstart.sh`, configure your secrets:
+### 6. Manual Kubernetes Deployment
 
 ```bash
-# Set your environment variables
-export DISCORD_BOT_TOKEN="your_discord_token"
-export OPENAI_API_KEY="your_openai_key"
-
-# Run the configuration helper
+# First, create your configuration file
 ./deploy-config.sh
 
-# Or specify a different namespace
-./deploy-config.sh --namespace production
-```
-
-### 5. Manual Kubernetes Deployment
-
-```bash
-# Option 1: Create secret manually first
-kubectl create secret generic discordai \
-  --from-literal=DISCORD_BOT_TOKEN="your_token_here" \
-  --from-literal=OPENAI_API_KEY="your_api_key_here" \
-  --from-literal=OPENAI_MODEL="gpt-3.5-turbo" \
-  --from-literal=OPENAI_MAX_TOKENS="1000" \
-  --from-literal=OPENAI_TEMPERATURE="0.7" \
-  --from-literal=OPENAI_INTEGRATION_ENABLED="true" \
-  --from-literal=RATE_LIMIT_MESSAGES_PER_MINUTE="5" \
-  --from-literal=RATE_LIMIT_TOKENS_PER_HOUR="10000"
-
-# Then install with Helm
-helm install discord-bot ./helm/discord-bot
-
-# Option 2: Use the example secret file
-cp helm/discord-bot/secret-example.yaml discordai-secret.yaml
-# Edit the file with your actual values
-kubectl apply -f discordai-secret.yaml
-helm install discord-bot ./helm/discord-bot
-
-# Option 3: Install with Helm values (creates secret automatically)
+# Then deploy with Helm using your custom values
 helm install discord-bot ./helm/discord-bot \
-  --set secrets.discordToken="your_token_here" \
-  --set secrets.openaiApiKey="your_api_key_here" \
-  --set secrets.openaiModel="gpt-3.5-turbo" \
-  --set secrets.openaiMaxTokens="1000" \
-  --set secrets.openaiTemperature="0.7" \
-  --set secrets.openaiEnabled="true" \
-  --set secrets.rateLimitMessagesPerMinute="5" \
-  --set secrets.rateLimitTokensPerHour="10000"
+  --values custom-values.yaml \
+  --namespace discord \
+  --create-namespace
 
 # Check status
-kubectl get pods -l app.kubernetes.io/name=discord-bot
+kubectl get pods -l app.kubernetes.io/name=discord-bot -n discord
 
 # View logs
-kubectl logs -l app.kubernetes.io/name=discord-bot -f
+kubectl logs -l app.kubernetes.io/name=discord-bot -f -n discord
 ```
 
 ## Configuration
+
+All configuration is now handled through environment variables (no Kubernetes secrets). The `deploy-config.sh` script creates a `custom-values.yaml` file that contains your configuration.
 
 ### Discord Bot Setup
 
@@ -232,6 +216,53 @@ kubectl logs -l app.kubernetes.io/name=discord-bot -f
 2. Generate an API key in your account settings
 3. Configure the model and parameters in your environment variables
 
+### Configuration Files
+
+- **`custom-values.yaml`**: Your deployment configuration (created by `deploy-config.sh`)
+  - Contains environment variables for your bot
+  - Automatically excluded from Git
+  - Used by Helm for deployment
+
+- **`helm/discord-bot/values.yaml`**: Default template values
+  - Template file for configuration
+  - Safe to commit to Git
+  - Contains no secrets
+
+### OpenAI Models and Pricing
+
+Choose the appropriate model based on your needs and budget. All prices are per 1 million tokens:
+
+#### GPT-4 Models (Most Capable)
+| Model | Context Window | Input Cost | Output Cost | Best For |
+|-------|---------------|------------|-------------|----------|
+| `gpt-4o` | 128K | $5.00 | $15.00 | Latest GPT-4 with vision capabilities |
+| `gpt-4o-mini` | 128K | $0.15 | $0.60 | Fast, affordable GPT-4 alternative |
+| `gpt-4-turbo` | 128K | $10.00 | $30.00 | High-performance GPT-4 |
+| `gpt-4` | 8K | $30.00 | $60.00 | Original GPT-4 (higher quality) |
+| `gpt-4-32k` | 32K | $60.00 | $120.00 | Extended context GPT-4 |
+
+#### GPT-3.5 Models (Fast & Cost-Effective)
+| Model | Context Window | Input Cost | Output Cost | Best For |
+|-------|---------------|------------|-------------|----------|
+| `gpt-3.5-turbo` | 16K | $0.50 | $1.50 | General purpose, good balance |
+| `gpt-3.5-turbo-16k` | 16K | $3.00 | $4.00 | Longer conversations |
+
+#### Specialized Models
+| Model | Context Window | Input Cost | Output Cost | Best For |
+|-------|---------------|------------|-------------|----------|
+| `text-embedding-3-small` | 8K | $0.02 | N/A | Text embeddings, semantic search |
+| `text-embedding-3-large` | 8K | $0.13 | N/A | High-quality embeddings |
+| `text-embedding-ada-002` | 8K | $0.10 | N/A | Legacy embedding model |
+
+#### Cost Optimization Tips
+- **For general chat**: Use `gpt-4o-mini` (best value)
+- **For complex reasoning**: Use `gpt-4o` or `gpt-4-turbo`
+- **For simple tasks**: Use `gpt-3.5-turbo`
+- **Monitor usage**: Use the `!usage` command to track token consumption
+- **Set limits**: Configure `RATE_LIMIT_TOKENS_PER_HOUR` to control costs
+
+**Note**: Prices are subject to change. Check [OpenAI's pricing page](https://openai.com/pricing/) for the latest rates.
+
 ### Required Environment Variables
 
 ```bash
@@ -240,7 +271,7 @@ DISCORD_BOT_TOKEN=your_discord_bot_token
 
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MODEL=gpt-5-nano
 OPENAI_MAX_TOKENS=1000
 OPENAI_TEMPERATURE=0.7
 OPENAI_INTEGRATION_ENABLED=true

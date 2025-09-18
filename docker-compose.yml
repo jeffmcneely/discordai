@@ -9,6 +9,8 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
+      # PostgreSQL will be used if DISCORD_DB_URL is set
+      # If set to "default", PostgreSQL will not be used
     volumes:
       - ./logs:/app/logs
     networks:
@@ -32,24 +34,9 @@ services:
       - bot-network
     command: redis-server --appendonly yes
 
-  # Optional: Database for persistent storage
-  postgres:
-    image: postgres:15-alpine
-    container_name: discord-bot-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: discordbot
-      POSTGRES_USER: botuser
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-botpassword}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - bot-network
-
 networks:
   bot-network:
     driver: bridge
 
 volumes:
   redis_data:
-  postgres_data:

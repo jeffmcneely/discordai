@@ -1,0 +1,129 @@
+# Custom values for discord-bot deployment
+# This file contains environment-specific configuration and secrets
+# DO NOT COMMIT this file to Git - it contains sensitive information
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/jeffmcneely/discordai
+  pullPolicy: Always
+  tag: latest
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: discord-bot.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Discord Bot Configuration
+discordBot:
+  token: ""  # Set your Discord bot token here
+  logLevel: INFO
+  maxMessagesPerMinute: 10
+  databaseUrl: ""  # PostgreSQL connection string (optional)
+
+# OpenAI Integration
+openai:
+  apiKey: ""               # Set your OpenAI API key here
+  model: "gpt-5-nano"      # OpenAI model to use
+  maxTokens: "1000"        # Maximum tokens per response
+  temperature: "0.7"       # Response creativity (0.0-2.0)
+  enabled: "true"          # Enable/disable OpenAI integration
+
+# Rate Limiting Configuration
+rateLimiting:
+  messagesPerMinute: "5"    # Rate limit for messages
+  tokensPerHour: "10000"    # Rate limit for tokens
+
+# Redis Configuration
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# PostgreSQL Configuration (Remote Database)
+postgresql:
+  enabled: false  # Always false - use remote database
+  host: ""        # Not used - configured via DISCORD_DB_URL
+  port: "5432"    # Not used - configured via DISCORD_DB_URL
+  database: ""    # Not used - configured via DISCORD_DB_URL
+  username: ""    # Not used - configured via DISCORD_DB_URL
+  password: ""    # Not used - configured via DISCORD_DB_URL
+
+# Monitoring and Observability
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+# Environment Variables (replace the secrets section)
+# These will be injected as environment variables into the pod
+env:
+  DISCORD_BOT_TOKEN: ""                    # Set your Discord bot token
+  OPENAI_API_KEY: ""                       # Set your OpenAI API key
+  OPENAI_MODEL: "gpt-5-nano"               # OpenAI model to use
+  OPENAI_MAX_TOKENS: "1000"                # Maximum tokens per response
+  OPENAI_TEMPERATURE: "0.7"                # Response creativity
+  OPENAI_INTEGRATION_ENABLED: "true"       # Enable OpenAI integration
+  RATE_LIMIT_MESSAGES_PER_MINUTE: "5"      # Message rate limit
+  RATE_LIMIT_TOKENS_PER_HOUR: "10000"      # Token rate limit
+  DISCORD_DB_URL: ""                       # PostgreSQL connection string (optional)
