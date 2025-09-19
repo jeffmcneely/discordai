@@ -117,6 +117,13 @@ class DiscordBot(commands.Bot):
         except Exception as e:
             logger.error(f'Failed to load eBay commands: {e}')
         
+        # Load Meshy commands cog
+        try:
+            await self.load_extension('commands.meshy')
+            logger.info('Meshy commands loaded successfully')
+        except Exception as e:
+            logger.error(f'Failed to load Meshy commands: {e}')
+        
         # Set bot status
         await self.change_presence(
             activity=discord.Activity(
@@ -260,6 +267,16 @@ async def help_command(ctx):
     embed.add_field(
         name="!oimage [quality] [size] <prompt>",
         value="Generate an image with OpenAI (quality: low/medium/high, size: 1024x1024/1536x1024/1024x1536)",
+        inline=False
+    )
+    embed.add_field(
+        name="!meshy <description>",
+        value="Generate a 3D model with Meshy.ai (max 600 characters)",
+        inline=False
+    )
+    embed.add_field(
+        name="!meshy_status",
+        value="Check Meshy.ai API connection status",
         inline=False
     )
     await ctx.send(embed=embed)

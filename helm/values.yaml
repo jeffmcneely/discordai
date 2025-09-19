@@ -124,3 +124,4 @@ env:
   RATE_LIMIT_MESSAGES_PER_MINUTE: "5"      # Message rate limit
   RATE_LIMIT_TOKENS_PER_HOUR: "10000"      # Token rate limit
   DISCORD_DB_URL: ""                       # PostgreSQL connection string (optional)
+  MESHY_API_KEY: ""                        # Set your Meshy.ai API key (optional)
