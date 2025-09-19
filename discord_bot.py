@@ -574,22 +574,33 @@ async def oimage_command(ctx, quality: str = None, size: str = None, *, prompt: 
                 return
             prompt = parts[1]
 
-        # Split out quality and size if present
+        # Parse quality and size from the prompt if not provided as parameters
         tokens = prompt.split()
-        q = tokens[0].lower() if tokens and tokens[0].lower() in ALLOWED_QUALITIES else "low"
-        s = tokens[1] if len(tokens) > 1 and tokens[1] in ALLOWED_SIZES else "1024x1024"
-        # If quality and size were detected, prompt is the rest
-        if tokens and tokens[0].lower() in ALLOWED_QUALITIES:
-            quality = q
-            tokens = tokens[1:]
-        else:
+        prompt_text = prompt
+        
+        # If quality wasn't provided as parameter, try to parse it from prompt
+        if quality is None and tokens:
+            if tokens[0].lower() in ALLOWED_QUALITIES:
+                quality = tokens[0].lower()
+                tokens = tokens[1:]
+                prompt_text = " ".join(tokens)
+        
+        # If size wasn't provided as parameter, try to parse it from remaining tokens
+        if size is None and tokens:
+            if tokens[0] in ALLOWED_SIZES:
+                size = tokens[0]
+                tokens = tokens[1:]
+                prompt_text = " ".join(tokens)
+        
+        # Set defaults if not provided
+        if quality is None:
             quality = "low"
-        if tokens and tokens[0] in ALLOWED_SIZES:
-            size = tokens[0]
-            tokens = tokens[1:]
-        else:
+        if size is None:
             size = "1024x1024"
+            
+        # Reconstruct prompt text
         prompt_text = " ".join(tokens).strip()
+        
         if not prompt_text:
             await ctx.send("❌ Please provide a prompt.")
             return
