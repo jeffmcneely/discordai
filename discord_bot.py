@@ -10,8 +10,12 @@ import logging
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import random
+import io
+import signal
+import asyncio
 from message_filter import MessageFilter
 from openai_integration import OpenAIIntegration
+from openai_image import generate_image, ALLOWED_QUALITIES, ALLOWED_SIZES, MAX_PROMPT_LENGTH
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +52,58 @@ class DiscordBot(commands.Bot):
         
         self.message_filter = MessageFilter()
         self.openai_integration = OpenAIIntegration(message_filter=self.message_filter)
+        
+        # Set up signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
+        signal.signal(signal.SIGINT, self._handle_sigterm)
+    
+    def _handle_sigterm(self, signum, frame):
+        """Handle SIGTERM and SIGINT signals for graceful shutdown"""
+        logger.info(f"Received signal {signum}, initiating graceful shutdown")
+        
+        # Create a task to send the termination message
+        if self.is_ready():
+            asyncio.create_task(self._send_termination_message())
+        
+        # Schedule the bot to close after a short delay to allow message sending
+        asyncio.create_task(self._graceful_shutdown())
+    
+    async def _send_termination_message(self):
+        """Send termination message to Discord"""
+        try:
+            # Find a channel named 'copilot'
+            target_channel = None
+            
+            for guild in self.guilds:
+                for channel in guild.text_channels:
+                    if channel.name.lower() == 'copilot' and channel.permissions_for(guild.me).send_messages:
+                        target_channel = channel
+                        break
+                if target_channel:
+                    break
+            
+            if target_channel:
+                embed = discord.Embed(
+                    title="💀 Termination Notice",
+                    description="I am being terminated. Goodbye!",
+                    color=0xff0000,
+                    timestamp=datetime.now(timezone.utc)
+                )
+                embed.set_footer(text=f"PID: {os.getpid()}")
+                
+                await target_channel.send(embed=embed)
+                logger.info("Sent termination message to Discord")
+            else:
+                logger.warning("No 'copilot' channel found for termination message")
+                
+        except Exception as e:
+            logger.error(f"Error sending termination message: {e}")
+    
+    async def _graceful_shutdown(self):
+        """Gracefully shutdown the bot after a short delay"""
+        await asyncio.sleep(2)  # Give time for the message to be sent
+        logger.info("Graceful shutdown initiated")
+        await self.close()
     
     async def on_ready(self):
         """Called when the bot is ready"""
@@ -97,7 +153,7 @@ class DiscordBot(commands.Bot):
                     color=0x00ff00,
                     timestamp=datetime.now(timezone.utc)
                 )
-                embed.set_footer(text=f"Connected to {len(self.guilds)} server{'s' if len(self.guilds) != 1 else ''}")
+                embed.set_footer(text=f"PID: {os.getpid()} | Connected to {len(self.guilds)} server{'s' if len(self.guilds) != 1 else ''}")
                 
                 await target_channel.send(embed=embed)
                 logger.info(f"Sent startup message to {target_channel.name}: {startup_message}")
@@ -199,6 +255,11 @@ async def help_command(ctx):
     embed.add_field(
         name="!ebay",
         value="eBay commands - list auctions, check status, and more",
+        inline=False
+    )
+    embed.add_field(
+        name="!oimage [quality] [size] <prompt>",
+        value="Generate an image with OpenAI (quality: low/medium/high, size: 1024x1024/1536x1024/1024x1536)",
         inline=False
     )
     await ctx.send(embed=embed)
@@ -496,6 +557,81 @@ async def model_command(ctx, model_name: str = None):
         logger.error(f"Error in model command: {e}")
         await ctx.send(f"❌ Error managing model preference: {e}")
 
+@commands.command(name='oimage')
+async def oimage_command(ctx, quality: str = None, size: str = None, *, prompt: str = None):
+    """
+    Generate an image using OpenAI's gpt-image-1 model.
+    Usage: !oimage [quality] [size] <prompt>
+    """
+    try:
+        # Parse and validate parameters
+        # If prompt is None, try to parse from message content
+        if prompt is None:
+            # Remove command prefix and command name
+            parts = ctx.message.content.split(maxsplit=1)
+            if len(parts) < 2:
+                await ctx.send("❌ Please provide a prompt.")
+                return
+            prompt = parts[1]
+
+        # Split out quality and size if present
+        tokens = prompt.split()
+        q = tokens[0].lower() if tokens and tokens[0].lower() in ALLOWED_QUALITIES else "low"
+        s = tokens[1] if len(tokens) > 1 and tokens[1] in ALLOWED_SIZES else "1024x1024"
+        # If quality and size were detected, prompt is the rest
+        if tokens and tokens[0].lower() in ALLOWED_QUALITIES:
+            quality = q
+            tokens = tokens[1:]
+        else:
+            quality = "low"
+        if tokens and tokens[0] in ALLOWED_SIZES:
+            size = tokens[0]
+            tokens = tokens[1:]
+        else:
+            size = "1024x1024"
+        prompt_text = " ".join(tokens).strip()
+        if not prompt_text:
+            await ctx.send("❌ Please provide a prompt.")
+            return
+
+        # Validate prompt length
+        if len(prompt_text) > MAX_PROMPT_LENGTH:
+            await ctx.send(f"❌ Prompt too long (max {MAX_PROMPT_LENGTH} characters).")
+            return
+
+        # Only allow allowed sizes and qualities
+        if quality not in ALLOWED_QUALITIES:
+            await ctx.send(f"❌ Invalid quality. Allowed: {', '.join(ALLOWED_QUALITIES)}")
+            return
+        if size not in ALLOWED_SIZES:
+            await ctx.send(f"❌ Invalid size. Allowed: {', '.join(ALLOWED_SIZES)}")
+            return
+
+        # Check for server admin role
+        moderation = "low" if any(r.permissions.administrator for r in ctx.author.roles) else "auto"
+
+        await ctx.send(f"🖼️ Generating image...\nQuality: `{quality}` | Size: `{size}` | Moderation: `{moderation}`")
+
+        # Call OpenAI image generation
+        username = f"{ctx.author.name}#{ctx.author.discriminator}" if ctx.author.discriminator != "0" else ctx.author.name
+        result = await generate_image(prompt_text, quality=quality, size=size, moderation=moderation, username=username)
+        
+        # Handle base64 image response
+        image_data = result.get("image_data")
+        if image_data:
+            # Create a file-like object from the image data
+            image_file = io.BytesIO(image_data)
+            discord_file = discord.File(image_file, filename="generated_image.png")
+            
+            # Send the image with the prompt
+            await ctx.send(f"**Prompt:** {prompt_text}", file=discord_file)
+        else:
+            await ctx.send("❌ Failed to generate image. No image data returned.")
+
+    except Exception as e:
+        logger.error(f"Error in oimage command: {e}")
+        await ctx.send(f"❌ Error generating image: {e}")
+
 def main():
     """Main function to run the bot"""
     # Get Discord token from environment
@@ -516,6 +652,7 @@ def main():
     bot.add_command(openai_status_command)
     bot.add_command(usage_command)
     bot.add_command(model_command)
+    bot.add_command(oimage_command)
     
     try:
         bot.run(token)

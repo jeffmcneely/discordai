@@ -1,5 +1,5 @@
 # Use Python 3.13 slim image with multi-architecture support
-FROM python:3.13-slim as builder
+FROM python:3.13-slim AS builder
 
 # Set working directory
 WORKDIR /app
@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir --upgrade pip wheel && \
     pip install --no-cache-dir -r requirements.txt
 
 # Production stage
-FROM python:3.13-slim as production
+FROM python:3.13-slim AS production
 
 # Set working directory
 WORKDIR /app
@@ -34,10 +34,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy only necessary application files
-COPY discord_bot.py .
-COPY main.py .
-COPY message_filter.py .
-COPY openai_integration.py .
+COPY *.py .
 COPY commands/ ./commands/
 
 # Create non-root user for security

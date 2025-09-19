@@ -105,7 +105,8 @@ class OpenAIIntegration:
             filter_result: Results from message filtering
         """
         try:
-            logger.info(f"📩 OPENAI RELAY REQUEST: '{message.content[:100]}{'...' if len(message.content) > 100 else ''}' from {message.author.name}")
+            username = f"{message.author.name}#{message.author.discriminator}" if message.author.discriminator != "0" else message.author.name
+            logger.info(f"📩 OPENAI RELAY REQUEST: '{message.content[:100]}{'...' if len(message.content) > 100 else ''}' from {username}")
             
             if not self.enabled:
                 logger.debug("❌ OpenAI integration disabled - skipping message relay")
@@ -128,6 +129,7 @@ class OpenAIIntegration:
             
             # Send to OpenAI ChatGPT API with latency measurement
             logger.info("🚀 Sending to OpenAI ChatGPT...")
+            logger.info(f"📝 Request details - User: {username}, Prompt: '{message.content}'")
             start_time = time.perf_counter()
             response = await self._send_to_openai(chat_messages, message.author.id)
             latency = (time.perf_counter() - start_time) * 1000  # ms
@@ -240,6 +242,7 @@ class OpenAIIntegration:
             latency: Latency in milliseconds (optional)
         """
         try:
+            username = f"{original_message.author.name}#{original_message.author.discriminator}" if original_message.author.discriminator != "0" else original_message.author.name
             logger.info(f"🤖 OPENAI RESPONSE HANDLER: Processing response for '{original_message.content[:50]}{'...' if len(original_message.content) > 50 else ''}'")
             
             # Extract response content from OpenAI format
@@ -250,6 +253,9 @@ class OpenAIIntegration:
             
             response_content = choices[0].get('message', {}).get('content', '')
             finish_reason = choices[0].get('finish_reason', 'unknown')
+            
+            # Log the full interaction details
+            logger.info(f"💬 Full interaction log - User: {username}, Prompt: '{original_message.content}', Response: '{response_content}'")
             
             # Extract usage information and update tracking
             usage = openai_response.get('usage', {})
@@ -308,7 +314,8 @@ class OpenAIIntegration:
             # Send response to Discord
             sent_message = await original_message.channel.send(embed=embed)
             logger.info(f"✅ RESPONSE SENT: Message ID {sent_message.id} sent to #{original_message.channel.name}")
-            logger.info(f"📈 OPENAI METRICS: Model='{self.openai_model}', Tokens={usage.get('total_tokens', 0)}, Channel='{original_message.channel.name}', User='{original_message.author.name}'")
+            logger.info(f"📈 OPENAI METRICS: Model='{self.openai_model}', Tokens={usage.get('total_tokens', 0)}, Channel='{original_message.channel.name}', User='{username}'")
+            logger.info(f"📋 COMPLETE TRANSACTION: User={username}, Prompt='{original_message.content}', Response='{response_content[:200]}{'...' if len(response_content) > 200 else ''}'")
             
         except discord.HTTPException as e:
             logger.error(f"❌ Discord HTTP error sending response: {e}")
